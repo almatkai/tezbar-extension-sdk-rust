@@ -88,3 +88,88 @@ New handlers should call typed methods directly. Host validates argument objects
 before routing. Unsupported old channels return an error rather than falling back.
 Perplexity uses only host.shell.open; the other helpers need their port/platform
 host integration tests before those ports ship.
+
+
+## Optional launcher contributions (SDK 0.1.1)
+
+Protocol 1 and package schema 3 are unchanged. SDK hello advertises
+`features:["launcher.v1"]`. Initialize accepts optional `hostFeatures`; its
+response returns the intersection as `features`. `ctx.supports(LAUNCHER_FEATURE)`
+checks it. Older SDK 0.1.0 executables and ordinary sessions need no new fields,
+hooks, rebuild, or reverse capability. A new SDK connected to an older host keeps
+normal sessions and does not publish an index.
+
+`Extension::launcher_activate(ctx, params)` and `launcher_search(ctx, params)`
+have default unsupported implementations. A package declaring contributions must
+implement the corresponding hooks. Activation is **post ready**, never inside
+initialize: only after the host has received `{ready:true}` may it call
+`launcher.activate {contributionId}` and accept `host.launcher.publish`. This
+separates storage migration from host service readiness.
+
+Generic example (no regular expression evaluation):
+
+```json
+{"launcherContributions":[{"id":"items","commandName":"lookup",
+ "argumentName":"value","surfaces":["query","argument"],
+ "selectors":{"terms":["lookup","catalog"],"digitRun":{"min":2,"max":5}},
+ "limit":12,"timeoutMs":1500,"index":true,
+ "bootstrapMigrationPaths":["savedItems"]}]}
+```
+
+Selectors are case-insensitive substring terms or a maximal ASCII digit run in
+an inclusive length range. Host bounds: 8 descriptors/package, 32 terms of up to
+128 bytes, digit lengths 1..16, 32 results/query, timeout 50..3000 ms, query UTF-8
+length <=1024 bytes. A descriptor targets its own declared command and optional
+argument. Host validates these relationships and capability grants on install.
+
+`launcher.search {contributionId,queryId,text,surface,commandName?,argumentName?,limit}`
+returns `{rows:[{id,title,subtitle,score,action}]}`. Action is only
+`{type:"run-extension-command",commandName:<declared command>,argumentValues:{...}}`;
+host derives canonical extension identity, command metadata, and category. Scores
+are integers 0..20000. Domain parsing, ranking, OS caches and nonblocking refresh
+belong to the extension. Search contexts reject host service RPCs; selection uses
+an ordinary command session and freshly performs any required authorization.
+Latest searches cancel earlier searches of the same contribution/surface in reader
+order. They share the existing bounded handler slots and process task ownership.
+
+With exact capability `launcher.publish`, a negotiated activation/session may send
+`host.launcher.publish {contributionId,revision,rows:[...]}`. Index rows add
+`tokens:[string]` to the same closed row shape (up to 256 rows, 16 tokens/row,
+256 bytes/token, total persisted index <=256 KiB/package). This is a lightweight
+label/string-argument index, **not** an OS process inventory. Do not publish process
+IDs, identities or listener snapshots. Revisions increase within each process;
+host scopes them by process owner, contribution and package fingerprint. Storage
+is atomic/private and profile/identity/version/manifest+artifact-digest scoped.
+Publish after successful CRUD, serialize snapshot/publication to avoid stale writes,
+and propagate publication failures. Rebuild/retry the index after a failed publish;
+a persisted domain write cannot be rolled back through a later host RPC.
+
+Host searches index labels without waking every extension. Only selector/index
+matches (or current, running contributors' ephemeral matching rows) receive a lazy
+query. A missing index may bootstrap once after explicit install/update, or during
+bounded activation for an existing declared migration file. No full-extension
+startup scan, permanent lease or per-keystroke process enumeration is necessary.
+Process startup may run activation again to reconcile the current store. Deep and
+empty searches suppress contributors and cancel previous query work.
+
+For async refresh, `ctx.spawn` retains scoped work; emit
+`launcher.invalidated` with `{contributionId,queryId,revision}` when ready. This
+uses the existing `ctx.emit` envelope, not a session invalidation. Host accepts only
+the current query/process and increasing revision, emits a query-specific refresh,
+and rejects late results after new query, profile, update or uninstall. Do not
+request an enduring background lease merely to retain a cache. Keep refresh work
+bounded within the host's idle grace; failed refreshes retain the previous snapshot.
+
+Optional command `launcher` metadata supplies `recommendation` (0..2000), an `id`
+restricted to that canonical/replacement command ID, and `inlineArgument`:
+`{name,title,prompt,validation?:{kind:"integer",min,max,maxLength,message}}`.
+The renderer preserves argument input/Enter/Tab/Escape behavior using this data.
+Extension code remains authoritative for validation. Ordinary command execution,
+confirmation/dry-run and audit contracts are unchanged.
+
+`ctx.launcher_refresh_context()` is available only inside a launcher search. It
+returns a read-only context with process/root task ownership independent of one
+query cancellation. Use it for one short bounded cache refresh, publish an
+invalidation for the latest query ID, and keep it shorter than host idle grace.
+Its `ctx.spawn` is still capped at 64 tasks and stops at EOF/shutdown. It grants no
+host service access or enduring background ownership.

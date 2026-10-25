@@ -40,3 +40,25 @@ Port owns cleanup of unregistered threads/native helpers and durable domain stat
 Extension publication requires an immutable SDK revision, updated lockfiles,
 and native isolated release CI. This local validation does not establish Windows
 or live OS integration behavior.
+
+
+## Prepared 0.1.1 launcher addition
+
+2026-10-25: Rust **1.85.0** locked/offline `cargo test -j1` passes **17 tests**
+(4 helpers, 12 original process tests, 1 new real-pipe launcher test). The new
+fixture negotiates optional features, acknowledges ready before reverse index
+publication, checks Unicode rows, then supersedes a slow launcher query in reader
+order. Existing no-feature command-session tests remain unchanged and pass.
+`uuid` is fixed to 1.23.3 to preserve the declared 1.85 MSRV; the previous lockfile's
+1.29.0 requires Rust 1.89.0. This only changes the prepared SDK revision.
+
+Strict all-target/all-feature Clippy, fmt and locked release are local gates.
+Fixture runtime uses two workers. Optional launcher refresh contexts keep short,
+read-only cache jobs in the root task scope across query replacement; EOF/shutdown
+still stops them. There is no permanent lease or OS-specific dependency.
+
+An external app-host test installs the actual SDK fixture executable in a verified
+ZIP and exercises lazy selection, post-ready publication, index scope, query/update
+fences and uninstall purge. No live OS services are invoked. Windows/macOS Intel
+CI, publishing and downstream repins remain parent-owned; 0.1.1 is prepared, not
+published. No already pinned 0.1.0 consumer must rebuild for this optional addition.

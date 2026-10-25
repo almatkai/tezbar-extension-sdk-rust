@@ -90,6 +90,7 @@ pub const HOST_METHODS: &[&str] = &[
     "host.notifications.remove",
     "host.safety.authorize",
     "host.safety.record",
+    "host.launcher.publish",
 ];
 type Pending = Arc<Mutex<HashMap<String, oneshot::Sender<CoreResult>>>>;
 #[derive(Clone)]
@@ -200,6 +201,9 @@ pub struct ExtensionContext {
     pub migration_paths: HashMap<String, PathBuf>,
     pub granted_capabilities: HashSet<String>,
     pub host_client: HostClient,
+    /// Optional protocol features agreed during initialize.
+    pub negotiated_features: HashSet<String>,
+    pub(crate) launcher_search: bool,
     pub(crate) scope: Arc<Scope>,
     pub(crate) operation_cancel: Cancel,
     pub(crate) session_id: Option<String>,
@@ -219,13 +223,24 @@ impl ExtensionContext {
             migration_paths,
             granted_capabilities: grants,
             host_client,
+            negotiated_features: HashSet::new(),
+            launcher_search: false,
             scope: Scope::new(),
             operation_cancel: Cancel::new(),
             session_id: None,
             revision: Arc::default(),
         }
     }
+    pub fn supports(&self, feature: &str) -> bool {
+        self.negotiated_features.contains(feature)
+    }
     pub async fn host(&self, method: &str, params: Value) -> CoreResult {
+        if self.launcher_search {
+            return Err("Host services are unavailable during launcher search".into());
+        }
+        if method == "host.launcher.publish" && !self.supports(crate::LAUNCHER_FEATURE) {
+            return Err("Launcher feature not negotiated".into());
+        }
         let capability = method
             .strip_prefix("host.")
             .ok_or("Expected typed host method")?;
@@ -304,6 +319,17 @@ impl ExtensionContext {
             .as_ref()
             .ok_or("Invalidation requires a session")?;
         self.host_client.send(json!({"type":"event","event":"session.invalidated","sessionId":id,"revision":self.revision.fetch_add(1, Ordering::SeqCst)+1}))
+    }
+    /// A short process-owned refresh may outlive one launcher query. It remains
+    /// read-only, bounded by the root task scope, and is stopped on EOF/shutdown.
+    /// The extension must use the CURRENT query ID when invalidating its cache.
+    pub fn launcher_refresh_context(&self) -> Result<Self, String> {
+        if !self.launcher_search {
+            return Err("Refresh context requires launcher search".into());
+        }
+        let mut ctx = self.clone();
+        ctx.operation_cancel = Cancel::new();
+        Ok(ctx)
     }
     pub async fn cancelled(&self) {
         tokio::select! { _ = self.scope.cancel.cancelled() => {}, _ = self.operation_cancel.cancelled() => {} }

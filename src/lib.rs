@@ -46,3 +46,6 @@ pub fn encode_form_query(text: &str) -> String {
 pub fn encode_component(text: &str) -> String {
     encode(text, false)
 }
+
+/// Additive protocol-1 launcher hooks; never required for ordinary sessions.
+pub const LAUNCHER_FEATURE: &str = "launcher.v1";

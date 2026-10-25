@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "tezbar-extension-sdk"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde_json",
  "tempfile",
@@ -304,9 +304,9 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 
 [[package]]
 name = "uuid"
-version = "1.29.0"
+version = "1.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a0e2d11620c50695fe12bbbfde96b3477fe606e7284c22d505c12ce51214514"
+checksum = "144d6b123cef80b301b8f72a9e2ca4370ddec21950d0a103dd22c437006d2db7"
 dependencies = [
  "getrandom",
  "js-sys",
