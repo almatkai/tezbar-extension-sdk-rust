@@ -1,0 +1,24 @@
+name: SDK native checks
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo fmt --check
+      - run: cargo test --locked --target ${{ matrix.target }} -- --test-threads=1
+      - run: cargo build --release --locked --target ${{ matrix.target }}

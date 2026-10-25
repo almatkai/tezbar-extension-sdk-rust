@@ -1,0 +1,5 @@
+Tezbar Rust extension SDK
+Copyright 2026 Almat. Apache-2.0.
+View/URL/storage helpers adapted from Tezbar commit
+fe71ca87f21ac4ff31505010c228f8abda0f2a89.
+Modified to use independent process contexts, scoped storage and typed host RPC.

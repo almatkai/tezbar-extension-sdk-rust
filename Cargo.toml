@@ -1,0 +1,16 @@
+[package]
+name = "tezbar-extension-sdk"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Independent bounded JSONL process SDK for Tezbar extensions"
+
+[dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "io-std", "sync", "time", "process"] }
+uuid = { version = "1", features = ["v4"] }
+tempfile = "3"
+
+[[bin]]
+name = "sdk-fixture"
+path = "src/bin/fixture.rs"
