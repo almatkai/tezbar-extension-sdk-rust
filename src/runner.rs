@@ -57,6 +57,24 @@ pub trait Extension: Send + Sync + 'static {
     ) -> BoxFuture<'a, CoreResult> {
         Box::pin(async { Err("Background event unsupported".into()) })
     }
+    /// Called only after initialize has been acknowledged by the host. Publish
+    /// lightweight persisted labels here, never during initialize.
+    fn launcher_activate<'a>(
+        &'a self,
+        _ctx: &'a ExtensionContext,
+        _params: &'a Value,
+    ) -> BoxFuture<'a, CoreResult> {
+        Box::pin(async { Err("Launcher activation unsupported".into()) })
+    }
+    /// Search is bounded/cancellable and independent of command session state.
+    /// Domain caches and ranking belong to the extension.
+    fn launcher_search<'a>(
+        &'a self,
+        _ctx: &'a ExtensionContext,
+        _params: &'a Value,
+    ) -> BoxFuture<'a, CoreResult> {
+        Box::pin(async { Err("Launcher search unsupported".into()) })
+    }
     fn shutdown<'a>(&'a self, _ctx: &'a ExtensionContext) -> BoxFuture<'a, CoreResult> {
         Box::pin(async { Ok(json!({})) })
     }
@@ -197,13 +215,20 @@ fn initialize(
             migrations.insert(key.clone(), path);
         }
     }
-    Ok(ExtensionContext::base(
+    let mut ctx = ExtensionContext::base(
         paths,
         text(params, "platform")?.into(),
         migrations,
         grants,
         host,
-    ))
+    );
+    if params["hostFeatures"]
+        .as_array()
+        .is_some_and(|a| a.iter().any(|v| v == LAUNCHER_FEATURE))
+    {
+        ctx.negotiated_features.insert(LAUNCHER_FEATURE.into());
+    }
+    Ok(ctx)
 }
 fn session_context(
     base: &ExtensionContext,
@@ -365,13 +390,14 @@ where
         }
         Ok::<_, String>(())
     });
-    host.send(json!({"type":"hello","protocol":1,"id":extension.id(),"version":extension.version(),"sdkVersion":env!("CARGO_PKG_VERSION")}))?;
+    host.send(json!({"type":"hello","protocol":1,"id":extension.id(),"version":extension.version(),"sdkVersion":env!("CARGO_PKG_VERSION"),"features":[LAUNCHER_FEATURE]}))?;
     let mut input = BufReader::new(input);
     // Retain partial frames when select is interrupted by handler/writer completion.
     let mut inbound = Vec::new();
     let mut tasks = JoinSet::new();
     let active: Arc<Mutex<HashMap<String, Cancel>>> = Arc::default();
     let sessions: Sessions = Arc::default();
+    let launcher_queries: Arc<Mutex<HashMap<String, Cancel>>> = Arc::default();
     let ready = Arc::new(AtomicBool::new(false));
     let mut base: Option<ExtensionContext> = None;
     let (done_tx, mut done_rx) = mpsc::channel(1);
@@ -491,6 +517,7 @@ where
                 let mut ctx = base.as_ref().unwrap().clone();
                 let cancel = Cancel::new();
                 ctx.operation_cancel = cancel.clone();
+                ctx.launcher_search = method == "launcher.search";
                 // Dispatch search/dispose in reader order, before worker scheduling or state locks.
                 let session_id = params["sessionId"].as_str().unwrap_or("").to_owned();
                 let mut selected = None;
@@ -568,6 +595,49 @@ where
                             session.scope.stop();
                             selected = Some(session);
                         }
+                        "launcher.activate" | "launcher.search" => {
+                            if !ctx.supports(LAUNCHER_FEATURE) {
+                                return Err("Launcher feature not negotiated".into());
+                            }
+                            let contribution = text(&params, "contributionId")?;
+                            if contribution.len() > 128 {
+                                return Err("Invalid contribution ID".into());
+                            }
+                            if method == "launcher.search" {
+                                let query = text(&params, "queryId")?;
+                                if query.len() > 128
+                                    || params["text"].as_str().is_none_or(|s| s.len() > 1024)
+                                    || !matches!(
+                                        params["surface"].as_str(),
+                                        Some("query" | "argument")
+                                    )
+                                    || params["limit"]
+                                        .as_u64()
+                                        .is_none_or(|n| !(1..=32).contains(&n))
+                                {
+                                    return Err("Invalid launcher search".into());
+                                }
+                                if params["surface"] == "argument"
+                                    && !extension
+                                        .commands()
+                                        .contains(&text(&params, "commandName")?)
+                                {
+                                    return Err("Unknown argument command".into());
+                                }
+                                let key = format!(
+                                    "{}:{}",
+                                    contribution,
+                                    params["surface"].as_str().unwrap()
+                                );
+                                let mut queries = launcher_queries.lock().unwrap();
+                                if !queries.contains_key(&key) && queries.len() >= 32 {
+                                    return Err("Too many launcher contributions".into());
+                                }
+                                if let Some(previous) = queries.insert(key, cancel.clone()) {
+                                    previous.cancel();
+                                }
+                            }
+                        }
                         "initialize" | "background.activate" | "background.event" => {}
                         "shutdown" => {
                             shutting_down = true;
@@ -596,7 +666,7 @@ where
                     let _registration = registration;
                     let work = async {
                         match method.as_str() {
-                            "initialize" => { extension.initialize(&ctx).await?; ready.store(true,Ordering::Release); Ok(json!({"ready":true})) },
+                            "initialize" => { extension.initialize(&ctx).await?; ready.store(true,Ordering::Release); Ok(json!({"ready":true,"features":ctx.negotiated_features})) },
                             "session.open" | "session.call" => {
                                 let session = selected.unwrap();
                                 let operation = if method == "session.open" { "extension:run-command" } else { params["operation"].as_str().unwrap() };
@@ -610,6 +680,8 @@ where
                                 result
                             },
                             "session.dispose" => dispose(extension.as_ref(),&ctx,&session_id,&selected.unwrap()).await,
+                            "launcher.activate" => extension.launcher_activate(&ctx,&params).await,
+                            "launcher.search" => extension.launcher_search(&ctx,&params).await,
                             "background.activate" => extension.background_activate(&ctx,&params).await,
                             "background.event" => extension.background_event(&ctx,&params).await,
                             "shutdown" => {

@@ -69,6 +69,33 @@ impl Extension for Fixture {
             }
         })
     }
+    fn launcher_activate<'a>(
+        &'a self,
+        ctx: &'a ExtensionContext,
+        _p: &'a Value,
+    ) -> BoxFuture<'a, CoreResult> {
+        Box::pin(async move {
+            ctx.host("host.launcher.publish", json!({"contributionId":"items","revision":1,"rows":[{
+                "id":"fixture:label","title":"雪 café 😀","subtitle":"Saved item","score":430,"tokens":["雪 café 😀"],
+                "action":{"type":"run-extension-command","commandName":"fixture","argumentValues":{"value":"saved"}}
+            }]})).await
+        })
+    }
+    fn launcher_search<'a>(
+        &'a self,
+        _ctx: &'a ExtensionContext,
+        p: &'a Value,
+    ) -> BoxFuture<'a, CoreResult> {
+        Box::pin(async move {
+            if p["text"] == "slow" {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            Ok(
+                json!({"rows":[{"id":"fixture:query","title":p["text"],"subtitle":"Dynamic item","score":280,
+                "action":{"type":"run-extension-command","commandName":"fixture","argumentValues":{"value":p["text"]}}}]}),
+            )
+        })
+    }
     fn background_activate<'a>(
         &'a self,
         ctx: &'a ExtensionContext,

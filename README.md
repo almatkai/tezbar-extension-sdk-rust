@@ -31,3 +31,5 @@ extensions must pin an immutable SDK git revision, commit Cargo.lock, and pass
 isolated CI builds. See [PROTOCOL.md](PROTOCOL.md) for the wire contract.
 The workflow checks this SDK on native macOS ARM and Windows x64; workflow presence
 does not claim those jobs have run.
+
+SDK 0.1.1 adds optional `launcher.v1`; see SDK_API.md. Protocol-1 0.1.0 sessions remain compatible.
