@@ -228,6 +228,9 @@ fn initialize(
     {
         ctx.negotiated_features.insert(LAUNCHER_FEATURE.into());
     }
+    if params["hostFeatures"].as_array().is_some_and(|a|a.iter().any(|v|v==crate::CAPTURE_FEATURE)) {
+        ctx.negotiated_features.insert(crate::CAPTURE_FEATURE.into());
+    }
     Ok(ctx)
 }
 fn session_context(

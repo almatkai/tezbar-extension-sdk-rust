@@ -254,6 +254,13 @@ impl ExtensionContext {
         }
         tokio::select! { biased; _ = self.cancelled() => Err("Operation cancelled".into()), result = self.host_client.call(method, params) => result }
     }
+    pub async fn capture_screen(&self, target: crate::CaptureTarget, max_width: u32) -> Result<crate::CaptureReply,String> {
+        if !self.negotiated_features.contains(crate::CAPTURE_FEATURE) { return Err("Host does not support capture targets".into()); }
+        if !(320..=4096).contains(&max_width) { return Err("Invalid capture maxWidth".into()); }
+        let session=self.session_id.as_ref().ok_or("Capture requires a session")?;
+        let target=match target { crate::CaptureTarget::Active=>"active",crate::CaptureTarget::All=>"all",crate::CaptureTarget::InteractiveRegion=>"interactive-region" };
+        crate::CaptureReply::parse(self.host("host.screen.capture",json!({"target":target,"maxWidth":max_width,"sessionId":session})).await?)
+    }
     pub async fn request(&self, channel: &str, args: Vec<Value>) -> CoreResult {
         let first = args.first().cloned().unwrap_or(Value::Null);
         let second = args.get(1).cloned().unwrap_or(Value::Null);
