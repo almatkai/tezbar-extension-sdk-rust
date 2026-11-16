@@ -65,6 +65,9 @@ impl Drop for Scope {
 }
 
 pub const HOST_METHODS: &[&str] = &[
+    "host.audio.play",
+    "host.audio.stop",
+    "host.navigation.popToRoot",
     "host.clipboard.read",
     "host.clipboard.write",
     "host.clipboard.writeImage",
@@ -234,6 +237,20 @@ impl ExtensionContext {
     }
     pub fn supports(&self, feature: &str) -> bool {
         self.negotiated_features.contains(feature)
+    }
+    pub async fn play_audio(&self, path: &str) -> CoreResult {
+        self.session_service("host.audio.play", "audio.local.v1", json!({"path":path})).await
+    }
+    pub async fn stop_audio(&self) -> CoreResult {
+        self.session_service("host.audio.stop", "audio.local.v1", json!({})).await
+    }
+    pub async fn pop_to_root(&self, clear_search: bool) -> CoreResult {
+        self.session_service("host.navigation.popToRoot", "navigation.session.v1", json!({"clearSearch":clear_search})).await
+    }
+    async fn session_service(&self, method: &str, feature: &str, mut params: Value) -> CoreResult {
+        if !self.supports(feature) { return Err(format!("Host feature not negotiated: {feature}")); }
+        params["sessionId"]=json!(self.session_id.as_ref().ok_or("Service requires session")?);
+        self.host(method,params).await
     }
     pub async fn host(&self, method: &str, params: Value) -> CoreResult {
         if self.launcher_search {

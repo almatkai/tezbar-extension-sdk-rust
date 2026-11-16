@@ -231,6 +231,9 @@ fn initialize(
     if params["hostFeatures"].as_array().is_some_and(|a|a.iter().any(|v|v==crate::CAPTURE_FEATURE)) {
         ctx.negotiated_features.insert(crate::CAPTURE_FEATURE.into());
     }
+    for feature in ["audio.local.v1","navigation.session.v1"] {
+        if params["hostFeatures"].as_array().is_some_and(|a|a.iter().any(|v|v==feature)) {ctx.negotiated_features.insert(feature.into());}
+    }
     Ok(ctx)
 }
 fn session_context(
