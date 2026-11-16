@@ -78,6 +78,7 @@ pub const HOST_METHODS: &[&str] = &[
     "host.window.visibility",
     "host.window.suppressBlur",
     "host.dialog.confirm",
+    "host.quicklinks.create",
     "host.screen.capture",
     "host.apps.list",
     "host.settings.open",
